@@ -6,11 +6,9 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Upload Python Package
+name: Publish Python 🐍 distribution 📦 to PyPI and TestPyPI
 
 on:
-  release:
-    types: [published]
   push:
     branches: [main]
 
@@ -18,7 +16,8 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  build:
+    name: Build distribution 📦
     runs-on: ubuntu-latest
 
     steps:
@@ -36,5 +35,5 @@ jobs:
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
         with:
-          user: __token__
+          user: lmbd92
           password: ${{ secrets.PYPI_API_TOKEN }}
