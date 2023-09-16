@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="mymlpackage",
-    version='{{VERSION_PLACEHOLDER}}',
+    version="0.1",
     author="Lina Beltrán",
     author_email="linam.beltran@udea.edu.co",
     description="A collection of minimal and clean implementations of machine learning algorithms.",
