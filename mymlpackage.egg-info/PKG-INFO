@@ -6,7 +6,6 @@ Home-page: https://github.com/lmbd92/mymlpackage
 Author: Lina Beltrán
 Author-email: linam.beltran@udea.edu.co
 License: MIT
-Platform: UNKNOWN
 Description-Content-Type: text/markdown
 
 This is my custom ML package based on the
@@ -78,5 +77,3 @@ SOFTWARE.
 Name: Lina María Beltrán Durango
 
 E-mail: linam.beltran@udea.edu.co
-
-
