@@ -5,13 +5,13 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="mymlpackage",
-    version="0.2",
+    version="1.0",
     author="Lina Beltrán",
     author_email="linam.beltran@udea.edu.co",
     description="A collection of minimal and clean implementations of machine learning algorithms.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/lmbd92/ML_II_UdeA/tree/main/Taller2/mymlpackage",
+    url="https://github.com/lmbd92/mymlpackage",
     license="MIT",
     packages=["mymlpackage"],
     zip_safe=False,
