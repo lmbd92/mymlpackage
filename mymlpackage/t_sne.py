@@ -172,7 +172,7 @@ def p_joint(X, target_perplexity):
 
 
 def estimate_sne(X, y, P, rng, num_iters, q_fn, grad_fn, learning_rate,
-                 momentum, plot):
+                 momentum):
     """Estimates a SNE model.
 
     # Arguments
