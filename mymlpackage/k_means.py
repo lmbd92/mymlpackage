@@ -11,6 +11,7 @@ class KMeans:
         self.tol = tol
         self.centroids = None
         self.labels = None
+        self.iter = 0
 
     def fit(self, X):
         """Fit the model to the data X."""
@@ -21,6 +22,7 @@ class KMeans:
         self.centroids = X[idx]
 
         for i in range(self.max_iters):
+            self.iter = i
             # Assign each data point to the nearest centroid
             distances = self._calc_distances(X)
             self.labels = np.argmin(distances, axis=1)
@@ -39,7 +41,7 @@ class KMeans:
     def predict(self, X):
         """Predict the closest cluster each sample in X belongs to."""
         distances = self._calc_distances(X)
-        return np.argmin(distances, axis=1)
+        return np.argmin(distances, axis=1), distances, self.iter
 
     def _calc_distances(self, X):
         """Calculate the distances from each point to each centroid."""

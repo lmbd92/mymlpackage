@@ -1,103 +1,214 @@
 import numpy as np
 
 
-def compute_pairwise_distances(X):
-    # Compute pairwise Euclidean distances between data points
-    n = X.shape[0]
-    distances = np.zeros((n, n))
-    for i in range(n):
-        for j in range(n):
-            distances[i, j] = np.linalg.norm(X[i] - X[j])
-    return distances
+def neg_squared_euc_dists(X):
+    """Compute matrix containing negative squared euclidean
+    distance for all pairs of points in input matrix X
+
+    # Arguments:
+        X: matrix of size NxD
+    # Returns:
+        NxN matrix D, with entry D_ij = negative squared
+        euclidean distance between rows X_i and X_j
+    """
+    # Math? See https://stackoverflow.com/questions/37009647
+    sum_X = np.sum(np.square(X), 1)
+    D = np.add(np.add(-2 * np.dot(X, X.T), sum_X).T, sum_X)
+    return -D
 
 
-def compute_similarity_matrix(distances, perplexity):
-    # Compute the conditional probability similarity matrix P
-    n = distances.shape[0]
-    P = np.zeros((n, n))
-    for i in range(n):
-        # Binary search for the perplexity value
-        beta_min = -np.inf
-        beta_max = np.inf
-        tol = 1e-5
-        beta = 1.0
+def softmax(X, diag_zero=True, zero_index=None):
+    """Compute softmax values for each row of matrix X."""
 
-        while True:
-            # Compute conditional probability matrix
-            exp_distances = np.exp(-distances[i] * beta)
-            sum_exp_distances = np.sum(exp_distances)
-            P[i] = exp_distances / sum_exp_distances
+    # Subtract max for numerical stability
+    e_x = np.exp(X - np.max(X, axis=1).reshape([-1, 1]))
 
-            # Compute the Shannon entropy of P[i]
-            entropy = -np.sum(P[i] * np.log2(P[i] + 1e-12))
+    # We usually want diagonal probailities to be 0.
+    if zero_index is None:
+        if diag_zero:
+            np.fill_diagonal(e_x, 0.)
+    else:
+        e_x[:, zero_index] = 0.
 
-            # Adjust beta based on the entropy
-            entropy_diff = entropy - np.log2(perplexity)
-            if np.abs(entropy_diff) < tol:
-                break
-            if entropy_diff > 0:
-                beta_min = beta
-                if beta_max == np.inf:
-                    beta *= 2
-                else:
-                    beta = (beta + beta_max) / 2
-            else:
-                beta_max = beta
-                if beta_min == -np.inf:
-                    beta /= 2
-                else:
-                    beta = (beta + beta_min) / 2
+    # Add a tiny constant for stability of log we take later
+    e_x = e_x + 1e-8  # numerical stability
 
+    return e_x / e_x.sum(axis=1).reshape([-1, 1])
+
+
+def calc_prob_matrix(distances, sigmas=None, zero_index=None):
+    """Convert a distances matrix to a matrix of probabilities."""
+    if sigmas is not None:
+        two_sig_sq = 2. * np.square(sigmas.reshape((-1, 1)))
+        return softmax(distances / two_sig_sq, zero_index=zero_index)
+    else:
+        return softmax(distances, zero_index=zero_index)
+
+
+def binary_search(eval_fn, target, tol=1e-10, max_iter=10000,
+                  lower=1e-20, upper=1000.):
+    """Perform a binary search over input values to eval_fn.
+
+    # Arguments
+        eval_fn: Function that we are optimising over.
+        target: Target value we want the function to output.
+        tol: Float, once our guess is this close to target, stop.
+        max_iter: Integer, maximum num. iterations to search for.
+        lower: Float, lower bound of search range.
+        upper: Float, upper bound of search range.
+    # Returns:
+        Float, best input value to function found during search.
+    """
+    for i in range(max_iter):
+        guess = (lower + upper) / 2.
+        val = eval_fn(guess)
+        if val > target:
+            upper = guess
+        else:
+            lower = guess
+        if np.abs(val - target) <= tol:
+            break
+    return guess
+
+
+def calc_perplexity(prob_matrix):
+    """Calculate the perplexity of each row
+    of a matrix of probabilities."""
+    entropy = -np.sum(prob_matrix * np.log2(prob_matrix), 1)
+    perplexity = 2 ** entropy
+    return perplexity
+
+
+def perplexity(distances, sigmas, zero_index):
+    """Wrapper function for quick calculation of
+    perplexity over a distance matrix."""
+    return calc_perplexity(
+        calc_prob_matrix(distances, sigmas, zero_index))
+
+
+def find_optimal_sigmas(distances, target_perplexity):
+    """For each row of distances matrix, find sigma that results
+    in target perplexity for that role."""
+    sigmas = []
+    # For each row of the matrix (each point in our dataset)
+    for i in range(distances.shape[0]):
+        # Make fn that returns perplexity of this row given sigma
+        def eval_fn(sigma): return \
+            perplexity(distances[i:i+1, :], np.array(sigma), i)
+        # Binary search over sigmas to achieve target perplexity
+        correct_sigma = binary_search(eval_fn, target_perplexity)
+        # Append the resulting sigma to our output array
+        sigmas.append(correct_sigma)
+    return np.array(sigmas)
+
+
+def p_conditional_to_joint(P):
+    """Given conditional probabilities matrix P, return
+    approximation of joint distribution probabilities."""
+    return (P + P.T) / (2. * P.shape[0])
+
+
+def q_joint(Y):
+    """Given low-dimensional representations Y, compute
+    matrix of joint probabilities with entries q_ij."""
+    # Get the distances from every point to every other
+    distances = neg_squared_euc_dists(Y)
+    # Take the elementwise exponent
+    exp_distances = np.exp(distances)
+    # Fill diagonal with zeroes so q_ii = 0
+    np.fill_diagonal(exp_distances, 0.)
+    # Divide by the sum of the entire exponentiated matrix
+    return exp_distances / np.sum(exp_distances), None
+
+
+def symmetric_sne_grad(P, Q, Y, _):
+    """Estimate the gradient of the cost with respect to Y"""
+    pq_diff = P - Q  # NxN matrix
+    pq_expanded = np.expand_dims(pq_diff, 2)  # NxNx1
+    y_diffs = np.expand_dims(Y, 1) - np.expand_dims(Y, 0)  # NxNx2
+    grad = 4. * (pq_expanded * y_diffs).sum(1)  # Nx2
+    return grad
+
+
+def q_tsne(Y):
+    """t-SNE: Given low-dimensional representations Y, compute
+    matrix of joint probabilities with entries q_ij."""
+    distances = neg_squared_euc_dists(Y)
+    inv_distances = np.power(1. - distances, -1)
+    np.fill_diagonal(inv_distances, 0.)
+    return inv_distances / np.sum(inv_distances), inv_distances
+
+
+def tsne_grad(P, Q, Y, distances):
+    """t-SNE: Estimate the gradient of the cost with respect to Y."""
+    pq_diff = P - Q  # NxN matrix
+    pq_expanded = np.expand_dims(pq_diff, 2)  # NxNx1
+    y_diffs = np.expand_dims(Y, 1) - np.expand_dims(Y, 0)  # NxNx2
+    # Expand our distances matrix so can multiply by y_diffs
+    distances_expanded = np.expand_dims(distances, 2)  # NxNx1
+    # Weight this (NxNx2) by distances matrix (NxNx1)
+    y_diffs_wt = y_diffs * distances_expanded  # NxNx2
+    grad = 4. * (pq_expanded * y_diffs_wt).sum(1)  # Nx2
+    return grad
+
+
+def p_joint(X, target_perplexity):
+    """Given a data matrix X, gives joint probabilities matrix.
+
+    # Arguments
+        X: Input data matrix.
+    # Returns:
+        P: Matrix with entries p_ij = joint probabilities.
+    """
+    # Get the negative euclidian distances matrix for our data
+    distances = neg_squared_euc_dists(X)
+    # Find optimal sigma for each row of this distances matrix
+    sigmas = find_optimal_sigmas(distances, target_perplexity)
+    # Calculate the probabilities based on these optimal sigmas
+    p_conditional = calc_prob_matrix(distances, sigmas)
+    # Go from conditional to joint probabilities matrix
+    P = p_conditional_to_joint(p_conditional)
     return P
 
 
-def t_sne(X, perplexity=30, num_iterations=1000, learning_rate=200):
-    # Initialize variables
-    n, m = X.shape
-    Y = np.random.randn(n, 2)  # Initialize Y randomly
-    dY = np.zeros((n, 2))
-    iY = np.zeros((n, 2))
-    gains = np.ones((n, 2))
+def estimate_sne(X, y, P, rng, num_iters, q_fn, grad_fn, learning_rate,
+                 momentum, plot):
+    """Estimates a SNE model.
 
-    # Compute pairwise distances and the similarity matrix P
-    distances = compute_pairwise_distances(X)
-    P = compute_similarity_matrix(distances, perplexity)
-    P = 0.5 * (P + P.T)  # Make P symmetric
+    # Arguments
+        X: Input data matrix.
+        y: Class labels for that matrix.
+        P: Matrix of joint probabilities.
+        rng: np.random.RandomState().
+        num_iters: Iterations to train for.
+        q_fn: Function that takes Y and gives Q prob matrix.
+        plot: How many times to plot during training.
+    # Returns:
+        Y: Matrix, low-dimensional representation of X.
+    """
 
-    # Perform t-SNE iterations
-    for iteration in range(num_iterations):
-        # Compute pairwise affinities Q
-        sum_Y = np.sum(np.square(Y), axis=1)
-        num = 1 / (1 + np.add(np.add(-2 * np.dot(Y, Y.T), sum_Y).T, sum_Y))
-        np.fill_diagonal(num, 0)
-        Q = num / np.sum(num)
-        Q = np.maximum(Q, 1e-12)  # Avoid division by zero
+    # Initialise our 2D representation
+    Y = rng.normal(0., 0.0001, [X.shape[0], 2])
 
-        # Compute gradient and update Y
-        PQ_diff = P - Q
-        for i in range(n):
-            dY[i] = 4 * np.sum(
-                np.tile(PQ_diff[:, i] * num[:, i], (2, 1)).T * (Y[i] - Y), axis=0
-            )
-        Y_grad = (PQ_diff.T.dot(Y - Y[:, np.newaxis])).flatten()
-        dY += Y_grad
+    # Initialise past values (used for momentum)
+    if momentum:
+        Y_m2 = Y.copy()
+        Y_m1 = Y.copy()
 
-        # Update gains
-        gains = (gains + 0.2) * ((dY > 0) != (iY > 0)) + (gains * 0.8) * (
-            (dY > 0) == (iY > 0)
-        )
-        gains[gains < 0.01] = 0.01
+    # Start gradient descent loop
+    for i in range(num_iters):
 
-        # Update Y with momentum
-        iY = learning_rate * iY - gains * dY
-        Y += iY
+        # Get Q and distances (distances only used for t-SNE)
+        Q, distances = q_fn(Y)
+        # Estimate gradients with respect to Y
+        grads = grad_fn(P, Q, Y, distances)
 
-        # Normalize Y to prevent exploding gradients
-        Y -= np.mean(Y, axis=0)
-
-        # Print progress
-        if (iteration + 1) % 100 == 0:
-            cost = np.sum(P * np.log(P / Q))
-            print(f"Iteration {iteration + 1}, Cost: {cost:.2f}")
+        # Update Y
+        Y = Y - learning_rate * grads
+        if momentum:  # Add momentum
+            Y += momentum * (Y_m1 - Y_m2)
+            # Update previous Y's for momentum
+            Y_m2 = Y_m1.copy()
+            Y_m1 = Y.copy()
 
     return Y

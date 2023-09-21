@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: mymlpackage
-Version: 1.0
+Version: 1.0.1
 Summary: A collection of minimal and clean implementations of machine learning algorithms.
 Home-page: https://github.com/lmbd92/mymlpackage
 Author: Lina Beltrán

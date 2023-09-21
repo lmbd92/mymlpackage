@@ -1,9 +1,24 @@
 import numpy as np
 
 
-def svd(A, k=None):
-    """Perform SVD using the eigendecomposition of A*A^T and A^T*A"""
+def svd(A, k=100):
+    """Perform SVD using the eigendecomposition of A*A^T and A^T*A
+    
+    :param A: Input matrix
+    :param tol: Tolerance for convergence
+    :param max_iter: Maximum number of iterations
+    :return: comp_image, U, S, V^T such that A = U * S * V^T
+    """
+    m, n = A.shape
+    U = A.copy()
+    V = np.eye(n)
+    S = np.zeros((m, n))
+
+    # Step 1: Apply SVD to U
     U, S, Vt = svd_eigendecomposition(A)
+
+    # Step 2: Update V
+    V = Vt @ V
 
     if k is not None:
         # Truncate to the top k singular values/vectors
